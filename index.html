@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PetTag</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       PET DATA — edit via the admin panel, do not edit manually
+  ════════════════════════════════════════════════════════════ -->
+  <script id="petDataScript">
+    var ADMIN_PIN = "1234";
+    var PETS = {};
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange:#FF6B35; --cream:#FFF8F3; --charcoal:#2D2D2D;
+      --mid:#666; --border:#E0D5CC; --white:#fff;
+      --green:#2ECC71; --red:#E74C3C; --blue:#3498DB; --teal:#1ABC9C;
+      --radius:16px; --shadow:0 4px 20px rgba(0,0,0,.10);
+    }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--cream); color:var(--charcoal); min-height:100vh; }
+    .view { display:none; }
+    .view.active { display:block; }
+
+    /* shared */
+    .banner { background:var(--orange); color:#fff; text-align:center; padding:14px 20px; }
+    .banner h1 { font-size:1.4rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+    .banner p  { font-size:.85rem; opacity:.9; margin-top:2px; }
+    .card { max-width:480px; margin:20px auto; padding:0 16px 40px; }
+    .section-header { font-size:.7rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--orange); margin:28px 0 12px; }
+    .footer { text-align:center; margin-top:32px; font-size:.75rem; color:#bbb; }
+    .footer span { color:var(--orange); font-weight:600; }
+    .edit-trigger { display:inline-block; margin-top:10px; font-size:.7rem; color:#ccc; cursor:pointer; padding:4px 8px; border-radius:8px; border:1px solid #e8e0da; transition:color .2s; }
+    .edit-trigger:hover { color:var(--orange); border-color:var(--orange); }
+
+    /* pet page */
+    .photo-wrap { position:relative; border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); aspect-ratio:4/3; background:#ddd; }
+    .photo-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
+    .photo-badge { position:absolute; top:12px; left:12px; background:var(--red); color:#fff; font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:4px 10px; border-radius:20px; }
+    .pet-name { font-size:2rem; font-weight:800; margin-top:20px; }
+    .pet-meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; }
+    .tag { background:var(--white); border:1px solid var(--border); border-radius:20px; padding:4px 12px; font-size:.8rem; color:var(--mid); font-weight:500; }
+    .tag strong { color:var(--charcoal); }
+    .description { margin-top:16px; font-size:.95rem; line-height:1.65; color:var(--mid); }
+    .contact-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .contact-btn { display:flex; align-items:center; justify-content:center; gap:8px; padding:14px 12px; border-radius:var(--radius); border:none; font-size:.9rem; font-weight:600; cursor:pointer; text-decoration:none; transition:transform .1s; }
+    .contact-btn:active { transform:scale(.97); }
+    .btn-call  { background:var(--teal); color:#fff; box-shadow:0 4px 12px rgba(26,188,156,.35); }
+    .btn-email { background:var(--blue);  color:#fff; box-shadow:0 4px 12px rgba(52,152,219,.35); }
+    .contact-info { margin-top:10px; font-size:.8rem; color:var(--mid); text-align:center; }
+    .ping-btn { width:100%; padding:18px; background:var(--green); color:#fff; border:none; border-radius:var(--radius); font-size:1rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 4px 16px rgba(46,204,113,.4); transition:background .2s,transform .1s; }
+    .ping-btn:active { transform:scale(.98); }
+    .ping-btn:disabled { background:#aaa; box-shadow:none; cursor:default; }
+    .ping-btn.pinging  { background:var(--orange); }
+    .status-msg { margin-top:10px; font-size:.82rem; color:var(--mid); text-align:center; min-height:18px; }
+    .status-msg.success { color:#27AE60; font-weight:600; }
+    .status-msg.error   { color:var(--red); font-weight:600; }
+    #map { height:240px; border-radius:var(--radius); margin-top:14px; display:none; box-shadow:var(--shadow); }
+
+    /* pin overlay */
+    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); z-index:100; align-items:center; justify-content:center; }
+    .overlay.active { display:flex; }
+    .pin-box { background:#fff; border-radius:20px; padding:32px 28px; width:90%; max-width:340px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+    .pin-box h2 { font-size:1.2rem; margin-bottom:6px; }
+    .pin-box p  { font-size:.85rem; color:var(--mid); margin-bottom:20px; }
+    .pin-input { width:100%; padding:14px; font-size:1.4rem; text-align:center; letter-spacing:.3em; border:2px solid var(--border); border-radius:12px; outline:none; margin-bottom:14px; }
+    .pin-input:focus { border-color:var(--orange); }
+    .pin-error { color:var(--red); font-size:.82rem; min-height:18px; margin-bottom:10px; }
+    .btn-primary { width:100%; padding:14px; background:var(--orange); color:#fff; border:none; border-radius:12px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:10px; }
+    .btn-cancel  { background:none; border:none; color:var(--mid); font-size:.85rem; cursor:pointer; padding:6px; }
+
+    /* admin */
+    #adminView { background:#fff; min-height:100vh; }
+    .admin-header { background:var(--charcoal); color:#fff; padding:18px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+    .admin-header h1 { font-size:1.1rem; font-weight:800; }
+    .header-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn-add     { background:var(--orange); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:.85rem; font-weight:700; cursor:pointer; }
+    .btn-publish { background:var(--green); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:.85rem; font-weight:700; cursor:pointer; }
+    .btn-settings { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:8px; padding:8px 14px; font-size:.85rem; cursor:pointer; }
+    .gh-setup-banner { background:#E8F4FD; border:1px solid #BEE0F5; border-radius:10px; padding:12px 14px; font-size:.82rem; color:#1a6a9a; margin-bottom:20px; }
+    .gh-setup-banner a { color:var(--orange); font-weight:600; cursor:pointer; text-decoration:underline; }
+    .admin-body { max-width:560px; margin:0 auto; padding:20px 16px 60px; }
+    .admin-section-label { font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--mid); margin-bottom:14px; }
+    .publish-notice { background:#FFF3CD; border:1px solid #FFD700; border-radius:10px; padding:12px 14px; font-size:.82rem; color:#856404; margin-bottom:20px; display:none; }
+    .publish-notice.show { display:block; }
+
+    /* pet cards in admin */
+    .pet-card { background:var(--cream); border:1.5px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px; display:flex; align-items:center; gap:14px; }
+    .pet-card-thumb { width:56px; height:56px; border-radius:10px; object-fit:cover; flex-shrink:0; background:#ddd; }
+    .pet-card-info { flex:1; min-width:0; }
+    .pet-card-info strong { font-size:1rem; font-weight:700; display:block; }
+    .pet-card-info span   { font-size:.8rem; color:var(--mid); }
+    .pet-card-url { font-size:.72rem; color:var(--orange); word-break:break-all; margin-top:2px; cursor:pointer; }
+    .pet-card-url:hover { text-decoration:underline; }
+    .pet-card-actions { display:flex; flex-direction:column; gap:6px; }
+    .btn-edit { padding:7px 14px; background:var(--charcoal); color:#fff; border:none; border-radius:8px; font-size:.8rem; font-weight:600; cursor:pointer; }
+    .btn-del  { padding:7px 14px; background:#fff; color:var(--red); border:1.5px solid var(--red); border-radius:8px; font-size:.8rem; font-weight:600; cursor:pointer; }
+    .empty-state { text-align:center; padding:40px 20px; color:var(--mid); }
+
+    /* pet form */
+    #petFormView { background:#fff; min-height:100vh; }
+    .form-header { background:var(--charcoal); color:#fff; padding:18px 20px; display:flex; align-items:center; gap:14px; }
+    .form-header button { background:none; border:none; color:#fff; font-size:1.4rem; cursor:pointer; padding:0; line-height:1; }
+    .form-header h1 { font-size:1.1rem; font-weight:800; }
+    .form-body { max-width:560px; margin:0 auto; padding:24px 16px 60px; }
+    .field-group { margin-bottom:16px; }
+    .field-group label { display:block; font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--mid); margin-bottom:6px; }
+    .field-group input, .field-group textarea, .field-group select { width:100%; padding:12px; font-size:.95rem; border:1.5px solid var(--border); border-radius:10px; outline:none; font-family:inherit; background:#fafafa; }
+    .field-group input:focus, .field-group textarea:focus { border-color:var(--orange); background:#fff; }
+    .field-group textarea { min-height:90px; resize:vertical; }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .photo-edit-wrap { display:flex; gap:10px; align-items:flex-start; }
+    .photo-preview-small { width:70px; height:70px; border-radius:10px; object-fit:cover; border:2px solid var(--border); flex-shrink:0; background:#eee; }
+    .upload-btn { width:100%; padding:10px; border:1.5px dashed #ccc; border-radius:10px; background:#fafafa; cursor:pointer; font-size:.85rem; color:#888; margin-bottom:8px; font-family:inherit; }
+    .save-btn { width:100%; padding:16px; background:var(--orange); color:#fff; border:none; border-radius:12px; font-size:1rem; font-weight:700; cursor:pointer; margin-top:8px; box-shadow:0 4px 14px rgba(255,107,53,.4); }
+    .save-feedback { text-align:center; margin-top:12px; font-size:.85rem; font-weight:600; min-height:20px; }
+    .section-divider { border:none; border-top:1px solid var(--border); margin:24px 0; }
+    .btn-secondary { padding:12px; background:var(--charcoal); color:#fff; border:none; border-radius:10px; font-size:.9rem; font-weight:600; cursor:pointer; width:100%; }
+    .pin-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+
+    /* toast */
+    .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--charcoal); color:#fff; padding:10px 20px; border-radius:20px; font-size:.85rem; font-weight:600; opacity:0; transition:opacity .3s; pointer-events:none; z-index:200; }
+    .toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+
+<!-- ── VIEW: PET PAGE (finders see this) ──────────────────── -->
+<div id="petView" class="view">
+  <div class="banner">
+    <h1>🐾 I Have Been Found!</h1>
+    <p>Please contact my owner using the details below.</p>
+  </div>
+  <div class="card">
+    <div class="photo-wrap">
+      <img id="dPhoto" src="" alt="Pet photo" onerror="this.style.display='none'" />
+      <div class="photo-badge">Lost Pet</div>
+    </div>
+    <h2 class="pet-name" id="dName"></h2>
+    <div class="pet-meta">
+      <span class="tag"><strong>Breed:</strong> <span id="dBreed"></span></span>
+      <span class="tag"><strong>Age:</strong> <span id="dAge"></span></span>
+      <span class="tag"><strong>Colour:</strong> <span id="dColour"></span></span>
+      <span class="tag"><strong>Sex:</strong> <span id="dSex"></span></span>
+    </div>
+    <p class="description" id="dDesc"></p>
+    <p class="section-header">Contact the Owner</p>
+    <div class="contact-grid">
+      <a class="contact-btn btn-call"  id="dCall"  href="#">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8 19.79 19.79 0 01.13 2.2 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+        Call Owner
+      </a>
+      <a class="contact-btn btn-email" id="dEmail" href="#">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Email Owner
+      </a>
+    </div>
+    <p class="contact-info" id="dContactInfo"></p>
+    <p class="section-header">Send My Location to the Owner</p>
+    <button class="ping-btn" id="pingBtn" onclick="pingLocation()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>
+      <span id="pingBtnText">Ping My Location</span>
+    </button>
+    <p class="status-msg" id="statusMsg">Tap above to share where you found this pet.</p>
+    <div id="map"></div>
+  </div>
+  <div class="footer">
+    Powered by <span>PetTag</span><br>
+    <span class="edit-trigger" onclick="showPinEntry()">Owner login</span>
+  </div>
+</div>
+
+<!-- ── VIEW: NOT FOUND ─────────────────────────────────────── -->
+<div id="notFoundView" class="view">
+  <div class="banner"><h1>PetTag</h1></div>
+  <div class="card" style="text-align:center;padding-top:40px;">
+    <div style="font-size:4rem;margin-bottom:16px;">🐾</div>
+    <h2 style="margin-bottom:12px;">Pet not found</h2>
+    <p style="color:var(--mid);font-size:.9rem;">This tag may not be set up yet, or the link is incorrect.</p>
+  </div>
+</div>
+
+<!-- ── VIEW: ADMIN DASHBOARD ──────────────────────────────── -->
+<div id="adminView" class="view">
+  <div class="admin-header">
+    <h1>PetTag Admin</h1>
+    <div class="header-actions">
+      <button class="btn-settings" onclick="showGhSettings()">&#9881; GitHub</button>
+      <button class="btn-add"     onclick="showPetForm(null)">+ Add Pet</button>
+      <button class="btn-publish" id="publishBtn" onclick="publishSite()">Publish</button>
+    </div>
+  </div>
+  <div class="admin-body">
+    <div class="publish-notice" id="publishNotice">
+      You have unsaved changes. Tap <strong>Publish</strong> to go live.
+    </div>
+    <div class="gh-setup-banner" id="ghBanner" style="display:none">
+      GitHub not connected. <a onclick="showGhSettings()">Connect GitHub</a> to publish with one tap — or Publish will download the file instead.
+    </div>
+    <p class="admin-section-label">Your Pets</p>
+    <div id="petList"></div>
+  </div>
+</div>
+
+<!-- ── VIEW: ADD / EDIT PET FORM ──────────────────────────── -->
+<div id="petFormView" class="view">
+  <div class="form-header">
+    <button onclick="showAdmin()">&#8592;</button>
+    <h1 id="formTitle">Add Pet</h1>
+  </div>
+  <div class="form-body">
+
+    <div class="field-group">
+      <label>Pet Photo</label>
+      <div class="photo-edit-wrap">
+        <img id="fPhotoPreview" class="photo-preview-small" src="" alt="Preview" onerror="this.style.opacity='.3'" />
+        <div style="flex:1">
+          <input type="file" id="fPhotoUpload" accept="image/*" onchange="handlePhotoUpload(event)" style="display:none" />
+          <button class="upload-btn" onclick="document.getElementById('fPhotoUpload').click()">Upload photo from device</button>
+          <input type="text" id="fPhotoUrl" placeholder="Or paste an image URL" oninput="previewPhotoUrl()" style="width:100%;padding:10px;font-size:.85rem;border:1.5px solid #E0D5CC;border-radius:10px;outline:none;background:#fafafa;" />
+        </div>
+      </div>
+    </div>
+
+    <div class="field-group"><label>Pet Name</label><input type="text" id="fName" placeholder="e.g. Buddy" /></div>
+    <div class="field-row">
+      <div class="field-group"><label>Breed</label><input type="text" id="fBreed" placeholder="e.g. Labrador" /></div>
+      <div class="field-group"><label>Age</label><input type="text" id="fAge" placeholder="e.g. 2 years" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Colour</label><input type="text" id="fColour" placeholder="e.g. Black" /></div>
+      <div class="field-group"><label>Sex</label><select id="fSex"><option>Male</option><option>Female</option></select></div>
+    </div>
+    <div class="field-group"><label>Description</label><textarea id="fDesc" placeholder="Personality, identifying features, microchip info, etc."></textarea></div>
+    <div class="field-group"><label>Owner Phone</label><input type="tel" id="fPhone" placeholder="e.g. 0400 000 000" /></div>
+    <div class="field-group"><label>Owner Email</label><input type="email" id="fEmail" placeholder="e.g. yourname@email.com" /></div>
+
+    <button class="save-btn" onclick="savePet()">Save Pet</button>
+    <p class="save-feedback" id="fFeedback"></p>
+
+    <hr class="section-divider" />
+    <p style="font-size:.85rem;font-weight:700;margin-bottom:12px;">Change Admin PIN</p>
+    <div class="pin-row">
+      <div class="field-group" style="margin:0"><label>New PIN</label><input type="password" inputmode="numeric" id="fNewPin" maxlength="6" placeholder="New PIN" /></div>
+      <div class="field-group" style="margin:0"><label>Confirm</label><input type="password" inputmode="numeric" id="fConfirmPin" maxlength="6" placeholder="Confirm" /></div>
+    </div>
+    <button class="btn-secondary" onclick="changePin()">Update PIN</button>
+    <p class="save-feedback" id="fPinFeedback"></p>
+  </div>
+</div>
+
+<!-- ── VIEW: GITHUB SETTINGS ───────────────────────────────── -->
+<div id="ghSettingsView" class="view">
+  <div class="form-header">
+    <button onclick="showAdmin()">&#8592;</button>
+    <h1>GitHub Settings</h1>
+  </div>
+  <div class="form-body">
+    <p style="font-size:.85rem;color:var(--mid);margin-bottom:20px;line-height:1.6;">
+      Connect your GitHub repository so the Publish button updates your live site automatically — no file uploading needed. Your token is stored only on this device.
+    </p>
+    <div class="field-group">
+      <label>GitHub Username</label>
+      <input type="text" id="ghUser" placeholder="e.g. andrewnguyen" />
+    </div>
+    <div class="field-group">
+      <label>Repository Name</label>
+      <input type="text" id="ghRepo" placeholder="e.g. lost-pet" />
+    </div>
+    <div class="field-group">
+      <label>Personal Access Token</label>
+      <input type="password" id="ghToken" placeholder="ghp_..." />
+      <p style="font-size:.75rem;color:var(--mid);margin-top:6px;">
+        Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic). Generate a token with the <strong>repo</strong> scope.
+      </p>
+    </div>
+    <button class="save-btn" onclick="saveGhSettings()">Save &amp; Connect</button>
+    <p class="save-feedback" id="ghFeedback"></p>
+    <hr class="section-divider" />
+    <button class="btn-secondary" onclick="clearGhSettings()" style="background:#fff;color:var(--red);border:1.5px solid var(--red);">Disconnect GitHub</button>
+  </div>
+</div>
+
+<!-- PIN OVERLAY -->
+<div class="overlay" id="pinOverlay">
+  <div class="pin-box">
+    <h2>Owner Access</h2>
+    <p>Enter your PIN to manage your pets.</p>
+    <input class="pin-input" type="password" inputmode="numeric" maxlength="6" id="pinInput" placeholder="- - - -" />
+    <p class="pin-error" id="pinError"></p>
+    <button class="btn-primary" onclick="checkPin()">Unlock</button><br>
+    <button class="btn-cancel" onclick="hidePinEntry()">Cancel</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── RUNTIME STATE ──────────────────────────────────────────────────
+// PETS and ADMIN_PIN are injected above by the petDataScript block.
+// We work with a live copy; publishSite() writes it back into the HTML.
+var pets     = JSON.parse(JSON.stringify(PETS));
+var adminPin = ADMIN_PIN;
+var dirty    = false;
+
+function markDirty() {
+  dirty = true;
+  document.getElementById("publishNotice").classList.add("show");
+}
+
+// ── ROUTING ────────────────────────────────────────────────────────
+function getParam(key) { return new URLSearchParams(window.location.search).get(key); }
+function slugify(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,""); }
+function petUrl(slug)  { return window.location.origin + window.location.pathname + "?pet=" + slug; }
+
+window.addEventListener("load", function() {
+  updateGhBanner();
+  var petParam = getParam("pet");
+  if (petParam) {
+    if (pets[petParam]) { renderPetPage(pets[petParam]); showView("petView"); }
+    else                { showView("notFoundView"); }
+  } else {
+    showPinEntry();
+  }
+});
+
+function showView(id) {
+  document.querySelectorAll(".view").forEach(function(v){ v.classList.remove("active"); });
+  document.getElementById(id).classList.add("active");
+}
+
+// ── PET PAGE ───────────────────────────────────────────────────────
+function renderPetPage(p) {
+  document.title = "Lost Pet - " + p.name;
+  document.getElementById("dPhoto").src  = p.photo || "";
+  document.getElementById("dPhoto").alt  = "Photo of " + p.name;
+  document.getElementById("dName").textContent   = p.name;
+  document.getElementById("dBreed").textContent  = p.breed;
+  document.getElementById("dAge").textContent    = p.age;
+  document.getElementById("dColour").textContent = p.colour;
+  document.getElementById("dSex").textContent    = p.sex;
+  document.getElementById("dDesc").textContent   = p.description;
+  var ph = (p.phone||"").replace(/\s/g,"");
+  if (ph && !ph.startsWith("+")) ph = "+61" + ph.replace(/^0/,"");
+  document.getElementById("dCall").href  = "tel:" + ph;
+  document.getElementById("dEmail").href = "mailto:" + (p.email||"");
+  document.getElementById("dContactInfo").innerHTML = "📞 " + (p.phone||"") + " &nbsp;|&nbsp; ✉️ " + (p.email||"");
+}
+
+// ── PIN ────────────────────────────────────────────────────────────
+function showPinEntry() {
+  document.getElementById("pinOverlay").classList.add("active");
+  document.getElementById("pinInput").value = "";
+  document.getElementById("pinError").textContent = "";
+  setTimeout(function(){ document.getElementById("pinInput").focus(); }, 100);
+}
+function hidePinEntry() {
+  document.getElementById("pinOverlay").classList.remove("active");
+  if (!document.querySelector(".view.active")) showView("notFoundView");
+}
+function checkPin() {
+  if (document.getElementById("pinInput").value.trim() === adminPin) {
+    hidePinEntry(); showAdmin();
+  } else {
+    document.getElementById("pinError").textContent = "Incorrect PIN. Please try again.";
+    document.getElementById("pinInput").value = "";
+    document.getElementById("pinInput").focus();
+  }
+}
+document.addEventListener("keydown", function(e){
+  if (e.key==="Enter" && document.getElementById("pinOverlay").classList.contains("active")) checkPin();
+});
+
+// ── ADMIN ──────────────────────────────────────────────────────────
+function showAdmin() { renderPetList(); showView("adminView"); }
+
+function renderPetList() {
+  var keys = Object.keys(pets);
+  var list = document.getElementById("petList");
+  if (!keys.length) {
+    list.innerHTML = '<div class="empty-state"><p>No pets added yet. Tap + Add Pet to get started.</p></div>';
+    return;
+  }
+  list.innerHTML = keys.map(function(slug){
+    var p = pets[slug];
+    var url = petUrl(slug);
+    return '<div class="pet-card">' +
+      '<img class="pet-card-thumb" src="'+(p.photo||"")+'" onerror="this.style.opacity=\'.3\'" />' +
+      '<div class="pet-card-info">' +
+        '<strong>'+escHtml(p.name)+'</strong>' +
+        '<span>'+escHtml(p.breed)+' &middot; '+escHtml(p.age)+'</span>' +
+        '<div class="pet-card-url" onclick="copyUrl(\''+url+'\')" title="Tap to copy">'+url+'</div>' +
+      '</div>' +
+      '<div class="pet-card-actions">' +
+        '<button class="btn-edit" onclick="showPetForm(\''+slug+'\')">Edit</button>' +
+        '<button class="btn-del"  onclick="deletePet(\''+slug+'\')">Delete</button>' +
+      '</div></div>';
+  }).join("");
+}
+
+function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function copyUrl(url) {
+  navigator.clipboard.writeText(url).then(function(){ showToast("URL copied!"); });
+}
+
+function deletePet(slug) {
+  if (!confirm("Delete " + pets[slug].name + "? This cannot be undone.")) return;
+  delete pets[slug];
+  markDirty();
+  renderPetList();
+}
+
+// ── GITHUB SETTINGS ────────────────────────────────────────────────
+function getGhSettings() {
+  try { return JSON.parse(localStorage.getItem("ghSettings") || "{}"); } catch(e) { return {}; }
+}
+function showGhSettings() {
+  var s = getGhSettings();
+  document.getElementById("ghUser").value  = s.user  || "";
+  document.getElementById("ghRepo").value  = s.repo  || "lost-pet";
+  document.getElementById("ghToken").value = s.token || "";
+  document.getElementById("ghFeedback").textContent = "";
+  showView("ghSettingsView");
+}
+function saveGhSettings() {
+  var user  = document.getElementById("ghUser").value.trim();
+  var repo  = document.getElementById("ghRepo").value.trim();
+  var token = document.getElementById("ghToken").value.trim();
+  var fb    = document.getElementById("ghFeedback");
+  if (!user || !repo || !token) { fb.style.color=var_red; fb.textContent="All fields are required."; return; }
+  localStorage.setItem("ghSettings", JSON.stringify({ user:user, repo:repo, token:token }));
+  fb.style.color="#27AE60"; fb.textContent="Saved! Testing connection...";
+  // Test the token
+  fetch("https://api.github.com/repos/"+user+"/"+repo, { headers:{ Authorization:"token "+token, "User-Agent":"PetTag/1.0" } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.full_name) { fb.textContent="Connected to "+d.full_name; updateGhBanner(); }
+      else { fb.style.color=var_red; fb.textContent="Could not connect. Check your username, repo, and token."; }
+    })
+    .catch(function(){ fb.style.color=var_red; fb.textContent="Connection failed. Check your token has repo scope."; });
+}
+function clearGhSettings() {
+  if (!confirm("Disconnect GitHub? You will need to re-enter your token to reconnect.")) return;
+  localStorage.removeItem("ghSettings");
+  updateGhBanner();
+  showAdmin();
+}
+function updateGhBanner() {
+  var s = getGhSettings();
+  var banner = document.getElementById("ghBanner");
+  var btn    = document.getElementById("publishBtn");
+  if (s.token) { banner.style.display="none"; btn.textContent="Publish to GitHub"; }
+  else         { banner.style.display="block"; btn.textContent="Download & Publish"; }
+}
+
+var var_red = "#E74C3C";
+
+// ── PUBLISH ────────────────────────────────────────────────────────
+function buildHtml() {
+  var src = document.documentElement.outerHTML;
+  var newScript = '<script id="petDataScript">\n    var ADMIN_PIN = ' +
+    JSON.stringify(adminPin) + ';\n    var PETS = ' +
+    JSON.stringify(pets, null, 2) + ';\n  <\/script>';
+  return src.replace(/<script id="petDataScript">[\s\S]*?<\/script>/, newScript);
+}
+
+function publishSite() {
+  var s = getGhSettings();
+  if (s.token && s.user && s.repo) {
+    publishToGitHub(s);
+  } else {
+    downloadFile();
+  }
+}
+
+function downloadFile() {
+  var blob = new Blob([buildHtml()], { type:"text/html" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "index.html"; a.click();
+  URL.revokeObjectURL(a.href);
+  dirty = false;
+  document.getElementById("publishNotice").classList.remove("show");
+  showToast("Downloaded! Upload index.html to GitHub to publish.");
+}
+
+function publishToGitHub(s) {
+  var btn = document.getElementById("publishBtn");
+  btn.disabled = true; btn.textContent = "Publishing...";
+  var html    = buildHtml();
+  var encoded = btoa(unescape(encodeURIComponent(html)));
+  var apiUrl  = "https://api.github.com/repos/"+s.user+"/"+s.repo+"/contents/index.html";
+  var headers = { Authorization:"token "+s.token, Accept:"application/vnd.github.v3+json", "Content-Type":"application/json", "User-Agent":"PetTag/1.0" };
+
+  // Get current file SHA first (needed for update)
+  fetch(apiUrl, { headers:headers })
+    .then(function(r){ return r.json(); })
+    .then(function(existing) {
+      var body = { message:"Update pet profiles", content:encoded };
+      if (existing.sha) body.sha = existing.sha;
+      return fetch(apiUrl, { method:"PUT", headers:headers, body:JSON.stringify(body) });
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(result) {
+      btn.disabled = false; btn.textContent = "Publish to GitHub";
+      if (result.content) {
+        dirty = false;
+        document.getElementById("publishNotice").classList.remove("show");
+        showToast("Published! Site updates in ~30 seconds.");
+      } else {
+        showToast("Publish failed. Check GitHub settings.");
+      }
+    })
+    .catch(function(){
+      btn.disabled = false; btn.textContent = "Publish to GitHub";
+      showToast("Publish failed. Check your connection and token.");
+    });
+}
+
+// ── PET FORM ───────────────────────────────────────────────────────
+var editingSlug  = null;
+var pendingPhoto = null;
+
+function showPetForm(slug) {
+  editingSlug = slug; pendingPhoto = null;
+  document.getElementById("formTitle").textContent = slug ? "Edit Pet" : "Add Pet";
+  document.getElementById("fFeedback").textContent = "";
+  var p = slug ? (pets[slug]||{}) : {};
+  document.getElementById("fName").value   = p.name   || "";
+  document.getElementById("fBreed").value  = p.breed  || "";
+  document.getElementById("fAge").value    = p.age    || "";
+  document.getElementById("fColour").value = p.colour || "";
+  document.getElementById("fSex").value    = p.sex    || "Male";
+  document.getElementById("fDesc").value   = p.description || "";
+  document.getElementById("fPhone").value  = p.phone  || "";
+  document.getElementById("fEmail").value  = p.email  || "";
+  document.getElementById("fPhotoUrl").value   = "";
+  document.getElementById("fPhotoPreview").src = p.photo || "";
+  document.getElementById("fNewPin").value     = "";
+  document.getElementById("fConfirmPin").value = "";
+  document.getElementById("fPinFeedback").textContent = "";
+  showView("petFormView");
+  window.scrollTo(0,0);
+}
+
+function handlePhotoUpload(e) {
+  var file = e.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    pendingPhoto = ev.target.result;
+    document.getElementById("fPhotoPreview").src = pendingPhoto;
+    document.getElementById("fPhotoUrl").value   = "";
+  };
+  reader.readAsDataURL(file);
+}
+
+function previewPhotoUrl() {
+  var url = document.getElementById("fPhotoUrl").value.trim();
+  if (url) { pendingPhoto = url; document.getElementById("fPhotoPreview").src = url; }
+}
+
+function savePet() {
+  var name = document.getElementById("fName").value.trim();
+  if (!name) {
+    var fb = document.getElementById("fFeedback");
+    fb.style.color = "#E74C3C"; fb.textContent = "Pet name is required."; return;
+  }
+  var slug = editingSlug || slugify(name);
+  var existing = pets[slug] || {};
+  pets[slug] = {
+    name:        name,
+    breed:       document.getElementById("fBreed").value.trim(),
+    age:         document.getElementById("fAge").value.trim(),
+    colour:      document.getElementById("fColour").value.trim(),
+    sex:         document.getElementById("fSex").value,
+    description: document.getElementById("fDesc").value.trim(),
+    phone:       document.getElementById("fPhone").value.trim(),
+    email:       document.getElementById("fEmail").value.trim(),
+    photo:       pendingPhoto || existing.photo || ""
+  };
+  pendingPhoto = null;
+  markDirty();
+  var fb = document.getElementById("fFeedback");
+  fb.style.color = "#27AE60";
+  fb.textContent = "Saved. NFC tag URL: " + petUrl(slug);
+  setTimeout(function(){ showAdmin(); }, 1800);
+}
+
+function changePin() {
+  var np = document.getElementById("fNewPin").value.trim();
+  var cp = document.getElementById("fConfirmPin").value.trim();
+  var fb = document.getElementById("fPinFeedback");
+  if (np.length < 4) { fb.style.color="#E74C3C"; fb.textContent="PIN must be at least 4 digits."; return; }
+  if (np !== cp)     { fb.style.color="#E74C3C"; fb.textContent="PINs do not match."; return; }
+  adminPin = np;
+  markDirty();
+  document.getElementById("fNewPin").value = document.getElementById("fConfirmPin").value = "";
+  fb.style.color="#27AE60"; fb.textContent="PIN updated. Download and publish to save.";
+  setTimeout(function(){ fb.textContent=""; }, 4000);
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────
+function showToast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(function(){ t.classList.remove("show"); }, 2500);
+}
+
+// ── LOCATION PING ──────────────────────────────────────────────────
+var map = null, marker = null;
+
+function pingLocation() {
+  var btn = document.getElementById("pingBtn");
+  var txt = document.getElementById("pingBtnText");
+  var msg = document.getElementById("statusMsg");
+  if (!navigator.geolocation) { msg.className="status-msg error"; msg.textContent="Geolocation not supported."; return; }
+  btn.disabled=true; btn.classList.add("pinging"); txt.textContent="Getting your location...";
+  msg.className="status-msg"; msg.textContent="";
+  navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, { enableHighAccuracy:false, timeout:20000, maximumAge:60000 });
+}
+
+function onLocationSuccess(pos) {
+  var lat = pos.coords.latitude.toFixed(6);
+  var lng = pos.coords.longitude.toFixed(6);
+  var acc = Math.round(pos.coords.accuracy);
+  var slug = getParam("pet");
+  var p = (slug && pets[slug]) ? pets[slug] : {};
+
+  var mapEl = document.getElementById("map");
+  mapEl.style.display="block";
+  if (!map) {
+    map = L.map("map").setView([lat,lng],16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap contributors",maxZoom:19}).addTo(map);
+  } else { map.setView([lat,lng],16); }
+  if (marker) marker.remove();
+  var icon = L.divIcon({ html:'<div style="background:#FF6B35;width:20px;height:20px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>', iconSize:[20,20], iconAnchor:[10,20], className:"" });
+  marker = L.marker([lat,lng],{icon}).addTo(map).bindPopup("<strong>"+(p.name||"Pet")+" found here</strong><br>Accuracy: +-"+acc+"m").openPopup();
+
+  var mapsUrl = "https://maps.google.com/?q="+lat+","+lng;
+  var subject = encodeURIComponent((p.name||"Your pet")+" has been found!");
+  var body    = encodeURIComponent(
+    "Hello,\n\nI have found your pet "+(p.name||"")+
+    ".\n\nMy current location:\nLatitude:  "+lat+"\nLongitude: "+lng+
+    "\n\nView on Google Maps: "+mapsUrl+
+    "\n\n(Location accurate to +-"+acc+" metres)\n\nPlease contact me as soon as possible."
+  );
+  setTimeout(function(){ window.location.href="mailto:"+(p.email||"")+"?subject="+subject+"&body="+body; }, 800);
+
+  document.getElementById("pingBtn").disabled=false;
+  document.getElementById("pingBtn").classList.remove("pinging");
+  document.getElementById("pingBtnText").textContent="Location Pinged";
+  document.getElementById("statusMsg").className="status-msg success";
+  document.getElementById("statusMsg").textContent="Location sent. Accuracy: +-"+acc+"m. Your email app will open to confirm.";
+}
+
+function onLocationError(err) {
+  document.getElementById("pingBtn").disabled=false;
+  document.getElementById("pingBtn").classList.remove("pinging");
+  document.getElementById("pingBtnText").textContent="Ping My Location";
+  var msgs={1:"Location access was denied. Please allow location in your browser settings.",2:"Could not determine your location. Please try again.",3:"Location request timed out. Please try again."};
+  document.getElementById("statusMsg").className="status-msg error";
+  document.getElementById("statusMsg").textContent=msgs[err.code]||"An error occurred. Please try again.";
+}
+</script>
+</body>
+</html>
