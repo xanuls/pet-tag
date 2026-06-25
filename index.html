@@ -12,19 +12,7 @@
   ════════════════════════════════════════════════════════════ -->
   <script id="petDataScript">
     var ADMIN_PIN = "1234";
-    var PETS = {
-  "theo": {
-    "name": "Theo",
-    "breed": "Cat",
-    "age": "3",
-    "colour": "Brown/Black",
-    "sex": "Male",
-    "description": "Kevins Cat",
-    "phone": "0400 000 000",
-    "email": "kevin@email.com",
-    "photo": "https://raw.githubusercontent.com/xanuls/pet-tag/main/images/theo.jpg"
-  }
-};
+    var PETS = {};
   </script>
 
   <style>
@@ -586,9 +574,9 @@ function publishToGitHub(s) {
         })
         .then(function(r){ return r.json(); })
         .then(function(result) {
-          if (result.content) {
-            // Use raw.githubusercontent.com — available immediately, no Pages deployment delay
-            pets[slug].photo = "https://raw.githubusercontent.com/" + s.user + "/" + s.repo + "/main/images/" + slug + ".jpg";
+          if (result.content && result.content.download_url) {
+            // Use the URL GitHub returns — correct regardless of branch name (main vs master)
+            pets[slug].photo = result.content.download_url;
           } else {
             console.warn("Image upload for", slug, "may have failed:", result);
           }
